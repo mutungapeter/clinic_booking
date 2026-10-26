@@ -11,8 +11,8 @@ cancelling, and rescheduling 30-minute appointments.
 
 ## Try the live API
 
-The hosted demo includes patient accounts, doctors, working hours, and sample
-appointments for quick testing. Reviewers can also create their own patient
+The deployment build prepares demo patient accounts, doctors, working hours,
+and sample appointments for quick testing. Reviewers can also create their own patient
 accounts through `POST /auth/register`. Doctors and working-hour schedules can
 be added through [Django admin](https://clinic-booking-backend-fkp7.onrender.com/admin/)
 using an authorized staff account, since these do not have creation API endpoints.
@@ -153,7 +153,8 @@ names.
 
 ### Step 3: Apply migrations and seed demo data
 
-These commands are for a new local database. The hosted demo is already seeded.
+These commands are for a new local database. Hosted demo data is prepared by
+the Render build after migrations.
 
 ~~~powershell
 python manage.py check
@@ -331,17 +332,21 @@ For fully automatic deployment, do not require manual approval on GitHub's
 
 Docker is not required by the assessment or this hosting setup. Render's native
 Python runtime runs [build.sh](build.sh) to install dependencies, collect
-static files, and apply migrations. Gunicorn serves the API; WhiteNoise serves
+static files, apply migrations, and seed demo data. Gunicorn serves the API; WhiteNoise serves
 Swagger/admin assets. CI still uses a disposable PostgreSQL container for tests.
 
 The first service creation needs an initial Render deployment. After that,
 GitHub Actions deploys the exact tested commit through the Render API. Keep
-independent auto-deploys off so they do not bypass the test gate. Configure and
-seed the Neon database once using your local terminal's database environment
-variables; seed commands are not part of every deployment.
+independent auto-deploys off so they do not bypass the test gate. Configure the
+live Neon `POSTGRES_*` variables in Render. After migrations, every build runs
+`seed_patients`, `seed_doctors`, and `seed_appointments` in that order against
+the configured database. Existing accounts, passwords, and schedules are
+preserved; appointment seeding fills a target of ten future demo bookings.
+A seed command failure stops the build. No Render Shell access is required.
 
-The application is deployed, and the hosted demo database is seeded. Verify the
-pull request test run and deployment after merging before submission.
+The application is deployed. After deploying this build configuration, confirm
+the seed command output in Render logs and test a demo login. Verify the pull
+request test run and deployment after merging before submission.
 See [Render's Django guide](https://render.com/docs/deploy-django)
 and [deployment API](https://api-docs.render.com/reference/create-deploy).
 
@@ -356,7 +361,7 @@ standards and structure, and made corrections to naming and model relationships.
 I also used AI to discuss design choices, draft documentation, generate tests
 for booking and error cases, prepare seed commands, add Swagger/Postman support,
 and prepare the CI/CD and Render configuration. The application is now hosted
-on Render with seeded demo data for manual testing.
+on Render, with demo seeding included in the build for manual testing.
 
 ### One suggestion that improved the work
 
