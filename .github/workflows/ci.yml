@@ -1,0 +1,171 @@
+name: CI and Render deployment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Django tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: clinic_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d clinic_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.testing
+      POSTGRES_DB: clinic_ci
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ci_test_password
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Confirm PostgreSQL test backend
+        run: >-
+          python -c "import django; django.setup();
+          from django.db import connection;
+          assert connection.vendor == 'postgresql', 'Concurrency tests require PostgreSQL'"
+
+      - name: Check Django and migration definitions
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+      - name: Run all tests, including concurrency tests
+        run: python manage.py test --noinput --verbosity=2
+
+  deploy:
+    name: Deploy to Render
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ vars.RENDER_PUBLIC_URL }}
+
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+      RENDER_PUBLIC_URL: ${{ vars.RENDER_PUBLIC_URL }}
+
+    steps:
+      - name: Check out the tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          : "${RENDER_API_KEY:?Set the RENDER_API_KEY GitHub Actions secret}"
+          : "${RENDER_SERVICE_ID:?Set the RENDER_SERVICE_ID GitHub Actions variable}"
+          : "${RENDER_PUBLIC_URL:?Set the RENDER_PUBLIC_URL GitHub Actions variable}"
+          case "$RENDER_PUBLIC_URL" in
+            https://*) ;;
+            *) echo "::error::RENDER_PUBLIC_URL must be an HTTPS application URL"; exit 1 ;;
+          esac
+
+      - name: Set up Python for deployment
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      
+      - name: Deploy tested commit and wait for Render
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.error import HTTPError, URLError
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+
+          service_id = quote(os.environ["RENDER_SERVICE_ID"], safe="")
+          base = f"https://api.render.com/v1/services/{service_id}/deploys"
+          headers = {
+              "Authorization": "Bearer " + os.environ["RENDER_API_KEY"],
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+          }
+
+          def request(url, payload=None):
+              data = json.dumps(payload).encode() if payload is not None else None
+              try:
+                  with urlopen(Request(url, data=data, headers=headers), timeout=30) as response:
+                      return json.load(response)
+              except HTTPError as exc:
+                  raise SystemExit(f"Render API returned HTTP {exc.code}; check credentials and service configuration.") from None
+              except URLError:
+                  raise SystemExit("Could not reach the Render API.") from None
+
+          deploy = request(base, {"commitId": os.environ["GITHUB_SHA"]})
+          deploy_id = deploy["id"]
+          print(f"Render deployment created: {deploy_id}", flush=True)
+          deadline = time.monotonic() + 20 * 60
+          failed = {"build_failed", "pre_deploy_failed", "update_failed", "canceled", "deactivated"}
+          while time.monotonic() < deadline:
+              state = request(base + "/" + quote(deploy_id, safe=""))
+              status = state["status"]
+              print(f"Render status: {status}", flush=True)
+              if status == "live":
+                  if state.get("commit", {}).get("id") != os.environ["GITHUB_SHA"]:
+                      raise SystemExit("Render deployed a different commit from the tested commit.")
+                  break
+              if status in failed:
+                  raise SystemExit(f"Render deployment failed: {status}. See Render deployment logs.")
+              time.sleep(10)
+          else:
+              raise SystemExit("Timed out waiting for Render deployment to become live.")
+          PY
+
+      - name: Verify public API schema responds
+        shell: bash
+        run: |
+          curl --fail --silent --show-error \
+            --proto '=https' --proto-redir '=https' \
+            --retry 12 --retry-all-errors --retry-delay 5 --max-time 20 \
+            "${RENDER_PUBLIC_URL%/}/swagger.json" --output render-schema.json
+          python3 -c "import json; schema = json.load(open('render-schema.json')); assert schema.get('swagger') == '2.0', 'Public URL did not return the API schema'"

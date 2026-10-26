@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: clinic-booking-api
+    runtime: python
+    plan: free
+    branch: main
+    # GitHub Actions owns deployments after the PostgreSQL test job passes.
+    autoDeployTrigger: "off"
+    buildCommand: bash build.sh
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 2 --access-logfile - --error-logfile -
+    healthCheckPath: /swagger.json
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: POSTGRES_DB
+        sync: false
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_HOST
+        sync: false
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_SSLMODE
+        value: require
+      - key: POSTGRES_CHANNEL_BINDING
+        value: require

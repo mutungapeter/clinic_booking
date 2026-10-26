@@ -7,7 +7,7 @@ cancelling, and rescheduling 30-minute appointments.
 
 **Public application URL:** pending deployment to Render.
 **API documentation:** append `/swagger/` to the application URL.
-**Postman:** [import and run instructions](../postman/README.md).
+**Postman:** [import and run instructions](postman/README.md).
 
 ## 1. System design
 
@@ -103,7 +103,6 @@ Without `POSTGRES_DB`, development uses SQLite; production requires PostgreSQL.
 ### Step 3: Apply migrations and seed demo data
 
 ~~~powershell
-cd clinic_booking_api
 python manage.py check
 python manage.py migrate
 python manage.py seed_patients
@@ -179,8 +178,8 @@ access token, or log in again when the refresh token expires.
 5. Reschedule using another available `starts_at`; check that the old slot is free.
 6. Cancel with a `reason`; check that the slot is free. Repeating cancellation returns `409`.
 
-For automated manual checks, import the [Postman collection](../postman/Clinic%20Booking%20API.postman_collection.json)
-and [environment](../postman/Clinic%20Booking%20API.postman_environment.json).
+For automated manual checks, import the [Postman collection](postman/Clinic%20Booking%20API.postman_collection.json)
+and [environment](postman/Clinic%20Booking%20API.postman_environment.json).
 Select the environment, set `base_url`, and run **01 - Booking walkthrough** in
 numbered order. It saves tokens/IDs, chooses future slots, and checks expected errors.
 
@@ -229,7 +228,7 @@ rescheduling rollback, permissions, tokens, seeds, and API documentation.
 **Provider:** Render (native Python), with Neon PostgreSQL. **Deployment branch:** `main`.
 The public URL will be added here after the first verified deployment.
 
-[GitHub Actions](../.github/workflows/ci.yml) runs Django checks, migration
+[GitHub Actions](.github/workflows/ci.yml) runs Django checks, migration
 consistency checks, and all tests on PostgreSQL 17 for every pull request.
 After a merge pushes code to `main`, it reruns verification, deploys the tested
 commit to Render, waits until that deployment is live, and checks the public
@@ -237,14 +236,14 @@ commit to Render, waits until that deployment is live, and checks the public
 Protect `main` to require PRs and passing tests; direct pushes otherwise also deploy.
 
 Create a Render **Web Service** linked to this repository and branch `main`.
-Use the repository-root [render.yaml](../render.yaml) Blueprint, or configure:
+Use the repository-root [render.yaml](render.yaml) Blueprint, or configure:
 
 | Setting | Value |
 | --- | --- |
 | Language/runtime | Python 3; the root `.python-version` selects Python 3.12 |
 | Root directory | Leave empty (repository root) |
 | Build command | `bash build.sh` |
-| Start command | `cd clinic_booking_api && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 2 --access-logfile - --error-logfile -` |
+| Start command | `gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 2 --access-logfile - --error-logfile -` |
 | Health check | `/swagger.json` |
 | Auto-deploy | Off; GitHub Actions triggers deployment after tests pass |
 
@@ -267,7 +266,7 @@ For fully automatic deployment, do not require manual approval on GitHub's
 `production` environment.
 
 Docker is not required by the assessment or this hosting setup. Render's native
-Python runtime runs [build.sh](../build.sh) to install dependencies, collect
+Python runtime runs [build.sh](build.sh) to install dependencies, collect
 static files, and apply migrations. Gunicorn serves the API; WhiteNoise serves
 Swagger/admin assets. CI still uses a disposable PostgreSQL container for tests.
 
