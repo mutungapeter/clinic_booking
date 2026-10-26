@@ -196,8 +196,19 @@ Appointment seeding is optional for Postman: the walkthrough creates its own boo
 
 If `--password` or `SEED_PATIENT_PASSWORD` was provided when seeding, use that
 password instead. Rerunning seeds does not reset existing passwords.
-Doctors have no seeded login accounts. To access admin, create a separate account
-with `python manage.py createsuperuser`.
+Doctors have no seeded login accounts.
+
+### Optional: Local admin access
+
+Admin access is not required to test the assessment endpoints. To manage doctors
+and working hours in your local database, run after migrations:
+
+~~~powershell
+python manage.py createsuperuser
+~~~
+
+Follow the prompts, start the server, and log in at
+[local Django admin](http://127.0.0.1:8000/admin/).
 
 ### Step 4: Start the server and log in
 
