@@ -5,9 +5,32 @@ Savannah Informatics Implementation Engineer Assessment.
 A Django REST Framework API for checking doctors' availability and booking,
 cancelling, and rescheduling 30-minute appointments.
 
-**Public application URL:** pending deployment to Render.
+**Public application URL:** https://clinic-booking-backend-fkp7.onrender.com
 **API documentation:** append `/swagger/` to the application URL.
 **Postman:** [import and run instructions](postman/README.md).
+
+## Try the live API
+
+The hosted demo includes patient accounts, doctors, working hours, and sample
+appointments for quick testing. Reviewers can also create their own patient
+accounts through `POST /auth/register`. Doctors and working-hour schedules can
+be added through [Django admin](https://clinic-booking-backend-fkp7.onrender.com/admin/)
+using an authorized staff account, since these do not have creation API endpoints.
+
+1. Open [live Swagger](https://clinic-booking-backend-fkp7.onrender.com/swagger/).
+2. Use `POST /auth/login` with username `demo_patient_001` and password
+   `ClinicDemo-Patients-2030!`.
+3. Copy `data.access`, click **Authorize**, and enter `Bearer <access-token>`.
+4. List doctors, check availability for a future weekday, and copy a returned
+   `starts_at` value to book. You can then reschedule or cancel the booking.
+
+Other demo usernames are `demo_patient_002` through `demo_patient_010`, using
+that same password. The full patient list is below under **Seeded patient credentials**.
+Sample appointments can become past appointments over time; choose a future
+available slot when testing.
+
+For Postman, import the files linked above and set `base_url` to
+`https://clinic-booking-backend-fkp7.onrender.com`.
 
 ## 1. System design
 
@@ -70,11 +93,19 @@ Slot conflicts return `409`; failed writes roll back.
 - Holidays, split/overnight shifts, doctor-facing accounts, and patient overlaps
   across different doctors are outside the initial scope.
 
-## 2. Run and test the API
+## 2. Run and test the API locally
 
 ### Step 1: Install dependencies
 
-Use Python 3.12. From the repository root:
+Use Python 3.12. Clone the repository and enter the folder containing
+`manage.py` and `requirements.txt`:
+
+~~~powershell
+git clone https://github.com/mutungapeter/clinic_booking.git
+cd clinic_booking
+~~~
+
+Create and activate a virtual environment, then install dependencies:
 
 ~~~powershell
 python -m venv .venv
@@ -82,10 +113,25 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ~~~
 
-### Step 2: Configure the database
+### Step 2: Choose the local database
 
-Create an empty PostgreSQL database, then set its connection details in the same
-PowerShell terminal. Replace the example database name, user, and password:
+**SQLite is the default.** No database installation or PostgreSQL configuration
+is needed for a quick local setup. Django creates `db.sqlite3` in the project
+root when you run migrations in Step 3.
+
+Use development settings and ensure this terminal is not pointing to the hosted
+database through a previously configured `POSTGRES_DB`:
+
+~~~powershell
+$env:DJANGO_SETTINGS_MODULE = "config.settings.development"
+Remove-Item Env:POSTGRES_DB -ErrorAction SilentlyContinue
+~~~
+
+Then continue to Step 3. Steps 3 and 4 seed your local database and start the
+server at `http://127.0.0.1:8000/`.
+
+**Optional: PostgreSQL locally.** To use PostgreSQL instead, create an empty
+local database and set its connection details in the same PowerShell terminal:
 
 ~~~powershell
 $env:POSTGRES_DB = "clinic_booking"
@@ -94,13 +140,20 @@ $env:POSTGRES_PASSWORD = "your-local-password"
 $env:POSTGRES_HOST = "127.0.0.1"
 $env:POSTGRES_PORT = "5432"
 $env:POSTGRES_SSLMODE = "disable"
+Remove-Item Env:POSTGRES_CHANNEL_BINDING -ErrorAction SilentlyContinue
 ~~~
 
-The application does **not** automatically load `.env` files.
-See [the environment example](.env.example) for configuration names.
-Without `POSTGRES_DB`, development uses SQLite; production requires PostgreSQL.
+Setting a nonempty `POSTGRES_DB` switches Django from SQLite to PostgreSQL.
+Production requires PostgreSQL. Use PostgreSQL to verify concurrent booking
+protection; SQLite is sufficient for exploring the API locally.
+
+The application does **not** automatically load `.env` files. Set variables in
+the terminal as shown above; see [.env.example](.env.example) for configuration
+names.
 
 ### Step 3: Apply migrations and seed demo data
+
+These commands are for a new local database. The hosted demo is already seeded.
 
 ~~~powershell
 python manage.py check
@@ -226,7 +279,7 @@ rescheduling rollback, permissions, tokens, seeds, and API documentation.
 ## 3. Deployment and CI/CD
 
 **Provider:** Render (native Python), with Neon PostgreSQL. **Deployment branch:** `main`.
-The public URL will be added here after the first verified deployment.
+The hosted API is available at https://clinic-booking-backend-fkp7.onrender.com.
 
 [GitHub Actions](.github/workflows/ci.yml) runs Django checks, migration
 consistency checks, and all tests on PostgreSQL 17 for every pull request.
@@ -276,10 +329,9 @@ independent auto-deploys off so they do not bypass the test gate. Configure and
 seed the Neon database once using your local terminal's database environment
 variables; seed commands are not part of every deployment.
 
-Deployment configuration, mocked deployment scenarios, and local Render HTTPS
-health checks passed. A hosted Actions run, Render build, and live deployment
-still need verification. Replace the pending public URL above
-before submitting the assessment. See [Render's Django guide](https://render.com/docs/deploy-django)
+The application is deployed, and the hosted demo database is seeded. Verify the
+pull request test run and deployment after merging before submission.
+See [Render's Django guide](https://render.com/docs/deploy-django)
 and [deployment API](https://api-docs.render.com/reference/create-deploy).
 
 ## 4. AI reflection
@@ -292,8 +344,8 @@ standards and structure, and made corrections to naming and model relationships.
 
 I also used AI to discuss design choices, draft documentation, generate tests
 for booking and error cases, prepare seed commands, add Swagger/Postman support,
-and prepare the CI/CD and Render configuration. Deployment configuration has
-been prepared, but a live deployment is still pending.
+and prepare the CI/CD and Render configuration. The application is now hosted
+on Render with seeded demo data for manual testing.
 
 ### One suggestion that improved the work
 
@@ -306,11 +358,12 @@ two separate versions of the booking rules.
 
 ### One example of wrong or incomplete output
 
-AI initially suggested `clinic-booking-api` without clearly distinguishing the
-repository name from the Django package name. Running `django-admin startproject`
-with that name failed because hyphens are not valid in Python identifiers.
-The error exposed the issue, and the naming distinction was corrected. I also
-reviewed generated naming and relationships rather than accepting them unchanged.
+AI reused some of my services incorrectly and initially used DRF's default
+`detail` error response instead of my agreed response structure. I reviewed and
+corrected the service calls and response handling to follow my project conventions:
+numeric `status`, `message`, and `data`, with a single `error` string for failures.
+These corrections reinforced the need to review generated code against the
+existing service design and API response contract.
 
 ### Two decisions I made without AI
 
